@@ -1,16 +1,28 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { BlobServiceClient } from "@azure/storage-blob";
+import { v4 as uuidv4 } from "uuid";
+
+export interface UploadResponse {
+  data: {
+    message: string;
+    filename: string;
+    url: string;
+  };
+}
 
 export async function POST(request: NextRequest) {
   try {
-    // Parse the request body
-    const body = await request.json();
-    const { base64Image, fileName } = body;
+    const formData = await request.formData();
+    const file = formData.get("file") as File;
 
-    if (!base64Image) {
+    if (!file) {
+      return NextResponse.json({ error: "No file provided" }, { status: 400 });
+    }
+
+    if (!file.type.startsWith("image/")) {
       return NextResponse.json(
-        { message: "No image data provided" },
+        { error: "Only image files are allowed" },
         { status: 400 }
       );
     }
@@ -20,7 +32,7 @@ export async function POST(request: NextRequest) {
 
     if (!containerName || !connectionString) {
       return NextResponse.json(
-        { message: "Azure Storage configuration is missing" },
+        { error: "Azure Storage configuration is missing" },
         { status: 500 }
       );
     }
@@ -34,20 +46,21 @@ export async function POST(request: NextRequest) {
       access: "blob", // This allows public read access to individual blobs
     });
 
-    // Get file extension from the fileName
-    const fileExtension = fileName.split(".").pop();
-    const contentType = `image/${fileExtension}`;
+    // Generate unique filename
+    const fileExtension = file.type.split("/")[1];
+    const fileName = `${uuidv4()}.${fileExtension}`;
 
     // Get the block blob client
     const blockBlobClient = containerClient.getBlockBlobClient(fileName);
 
-    // Convert base64 to buffer
-    const imageBuffer = Buffer.from(base64Image, "base64");
+    // Convert file to array buffer
+    const arrayBuffer = await file.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
 
-    // Set blob properties including content type
-    await blockBlobClient.uploadData(imageBuffer, {
+    // Upload the file
+    await blockBlobClient.uploadData(buffer, {
       blobHTTPHeaders: {
-        blobContentType: contentType,
+        blobContentType: file.type,
         blobCacheControl: "public, max-age=31536000",
       },
       metadata: {
@@ -60,19 +73,18 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json(
       {
-        message: "Image uploaded successfully",
-        filename: fileName,
-        url: blobUrl,
+        data: {
+          message: "Image uploaded successfully",
+          filename: fileName,
+          url: blobUrl,
+        },
       },
       { status: 200 }
     );
   } catch (error) {
     console.error("Upload error:", error);
     return NextResponse.json(
-      {
-        message: "Failed to upload image",
-        error: error instanceof Error ? error.message : "Unknown error",
-      },
+      { error: error instanceof Error ? error.message : "Unknown error" },
       { status: 500 }
     );
   }

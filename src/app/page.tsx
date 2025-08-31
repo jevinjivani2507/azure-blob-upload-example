@@ -2,9 +2,9 @@
 
 import { useState } from "react";
 import FileUpload from "@/components/file-upload";
-import useAzureBlob from "../../hooks/useBlobUpload";
 import { Button } from "@/components/ui/button";
-import { useFileUpload } from "@/hooks/use-file-upload";
+import { useUploadMutation } from "@/hooks/useUploadMutation";
+import { useFileUpload as useDragAndDrop } from "@/hooks/use-file-upload";
 
 export default function Home() {
   const maxSizeMB = 5;
@@ -21,18 +21,21 @@ export default function Home() {
       removeFile,
       getInputProps,
     },
-  ] = useFileUpload({
+  ] = useDragAndDrop({
     accept: "image/*",
     maxSize,
   });
 
-  const { uploadFile, uploading, error } = useAzureBlob();
+  const { trigger, isMutating, error, reset } = useUploadMutation();
 
   const handleUpload = async () => {
     if (files[0]) {
-      const result = await uploadFile(files[0].file as File);
-      if (result) {
+      try {
+        const result = await trigger(files[0].file as File);
         setUploadedUrl(result.url);
+      } catch (err) {
+        // Error is already handled by the hook
+        console.error("Upload failed:", err);
       }
     }
   };
@@ -54,11 +57,13 @@ export default function Home() {
         errors={errors}
       />
       <div className="mt-4 space-y-4">
-        <Button onClick={handleUpload} disabled={!files.length || uploading}>
-          {uploading ? "Uploading..." : "Upload"}
+        <Button onClick={handleUpload} disabled={!files.length || isMutating}>
+          {isMutating ? "Uploading..." : "Upload"}
         </Button>
 
-        {error && <div className="text-red-500 mt-2">Error: {error}</div>}
+        {error && (
+          <div className="text-red-500 mt-2">Error: {error.message}</div>
+        )}
 
         {uploadedUrl && (
           <div className="mt-4 space-y-2">
