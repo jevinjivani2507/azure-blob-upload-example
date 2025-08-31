@@ -2,14 +2,17 @@
 
 import { useState } from "react";
 import FileUpload from "@/components/file-upload";
-import useAzureBlob from "../../hooks/useBlobUpload";
 import { Button } from "@/components/ui/button";
 import { useFileUpload } from "@/hooks/use-file-upload";
+import { uploadToBlob } from "./actions/upload";
 
 export default function Home() {
   const maxSizeMB = 5;
   const maxSize = maxSizeMB * 1024 * 1024; // 5MB default
   const [uploadedUrl, setUploadedUrl] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
   const [
     { files, isDragging, errors },
     {
@@ -26,14 +29,27 @@ export default function Home() {
     maxSize,
   });
 
-  const { uploadFile, uploading, error } = useAzureBlob();
-
   const handleUpload = async () => {
-    if (files[0]) {
-      const result = await uploadFile(files[0].file as File);
-      if (result) {
-        setUploadedUrl(result.url);
+    if (!files[0]) return;
+
+    try {
+      setUploading(true);
+      setError(null);
+
+      const formData = new FormData();
+      formData.append("file", files[0].file as File);
+
+      const result = await uploadToBlob(formData);
+
+      if (!result.success) {
+        throw new Error(result.error);
       }
+
+      setUploadedUrl(result.url || null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to upload file");
+    } finally {
+      setUploading(false);
     }
   };
 
